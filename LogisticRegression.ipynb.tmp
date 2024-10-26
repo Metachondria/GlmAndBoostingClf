@@ -1,0 +1,347 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "id": "initial_id",
+   "metadata": {
+    "collapsed": true,
+    "ExecuteTime": {
+     "end_time": "2024-10-26T14:24:09.512840Z",
+     "start_time": "2024-10-26T14:24:09.407755Z"
+    }
+   },
+   "source": "import numpy as np",
+   "outputs": [],
+   "execution_count": 1
+  },
+  {
+   "metadata": {
+    "ExecuteTime": {
+     "end_time": "2024-10-26T14:24:53.669227Z",
+     "start_time": "2024-10-26T14:24:53.664353Z"
+    }
+   },
+   "cell_type": "code",
+   "source": [
+    "def generate_batches(X, y, batch_size):\n",
+    "    assert len(X) == len(y)\n",
+    "    np.random.seed(42)\n",
+    "    X = np.array(X)\n",
+    "    y = np.array(y)\n",
+    "    perm = np.random.permutation(len(X))\n",
+    "\n",
+    "\n",
+    "    for batch_start in range(0, len(X), batch_size):\n",
+    "        batch_end = min(batch_start + batch_size, len(X))\n",
+    "        if batch_end - batch_start < batch_size: break\n",
+    "        yield X[perm[batch_start:batch_end]], y[perm[batch_start:batch_end]]"
+   ],
+   "id": "deeb5101a7abeffe",
+   "outputs": [],
+   "execution_count": 2
+  },
+  {
+   "metadata": {
+    "ExecuteTime": {
+     "end_time": "2024-10-26T15:03:31.375281Z",
+     "start_time": "2024-10-26T15:03:31.372204Z"
+    }
+   },
+   "cell_type": "code",
+   "source": [
+    "def logit(x, w):\n",
+    "    return np.dot(x, w)\n",
+    "\n",
+    "def sigmoid(h):\n",
+    "    return 1. / (1 + np.exp(-h))"
+   ],
+   "id": "5a9cdabf882416ee",
+   "outputs": [],
+   "execution_count": 4
+  },
+  {
+   "metadata": {
+    "ExecuteTime": {
+     "end_time": "2024-10-26T15:05:25.760760Z",
+     "start_time": "2024-10-26T15:05:25.754003Z"
+    }
+   },
+   "cell_type": "code",
+   "source": [
+    "class LogisticRegression:\n",
+    "    def __init__(self):\n",
+    "        self.w = None\n",
+    "\n",
+    "    def fit(self, X, y, epochs=10, lr=0.1, batch_size=100):\n",
+    "        n, k = X.shape\n",
+    "        if self.w is None:\n",
+    "            np.random.seed(42)\n",
+    "            self.w = np.random.randn(k + 1)\n",
+    "\n",
+    "        X_train = np.concatenate((np.ones((n, 1)), X), axis=1)\n",
+    "\n",
+    "        losses = []\n",
+    "\n",
+    "\n",
+    "        for i in range(epochs):\n",
+    "            for X_batch, y_batch in generate_batches(X_train, y, batch_size):\n",
+    "\n",
+    "                predictions = sigmoid(logit(X_batch, self.w))\n",
+    "                loss = -np.sum(y_batch.dot(np.log(predictions)) + (1 - y_batch).dot(np.log(1-predictions)))\n",
+    "\n",
+    "                assert (np.array(loss).shape == tuple())\n",
+    "\n",
+    "                losses.append(loss)\n",
+    "                self.w -= lr * self.get_grad(X_batch,y_batch,predictions)\n",
+    "\n",
+    "        return losses\n",
+    "\n",
+    "    def get_grad(self, X_batch, y_batch, predictions):\n",
+    "        grad_basic = X_batch.T.dot(predictions - y_batch)\n",
+    "        assert grad_basic.shape == (X_batch.shape[1],) , \"Градиенты должны быть столбцом из k_features + 1 элементов\"\n",
+    "\n",
+    "        return grad_basic\n",
+    "\n",
+    "    def predict_proba(self, X):\n",
+    "        n, k = X.shape\n",
+    "        X_ = np.concatenate((np.ones((n, 1)), X), axis=1)\n",
+    "        return sigmoid(logit(X_, self.w))\n",
+    "\n",
+    "    def _predict_proba_internal(self, X):\n",
+    "        return sigmoid(logit(X, self.w))\n",
+    "\n",
+    "    def predict(self, X, threshold=0.5):\n",
+    "        return self.predict_proba(X) >= threshold\n",
+    "\n",
+    "    def get_weights(self):\n",
+    "        return self.w.copy()\n",
+    "\n",
+    "    def __loss(self, y, p):\n",
+    "        p = np.clip(p, 1e-10, 1 - 1e-10)\n",
+    "        return -np.sum(y * np.log(p) + (1 - y) * np.log(1 - p))"
+   ],
+   "id": "cab7eaebbd373ca3",
+   "outputs": [],
+   "execution_count": 7
+  },
+  {
+   "metadata": {
+    "ExecuteTime": {
+     "end_time": "2024-10-26T15:29:29.194711Z",
+     "start_time": "2024-10-26T15:29:29.190083Z"
+    }
+   },
+   "cell_type": "code",
+   "source": [
+    "class ElasticLogisticRegression(LogisticRegression):\n",
+    "    def __init__(self, l1_coef, l2_coef):\n",
+    "        self.l1_coef = l1_coef\n",
+    "        self.l2_coef = l2_coef\n",
+    "        self.w = None\n",
+    "\n",
+    "    def get_grad(self, X_batch, y_batch, predictions):\n",
+    "    \n",
+    "        grad_basic = super().get_grad(X_batch,y_batch,predictions)\n",
+    "\n",
+    "        grad_l1 = self.l1_coef * np.sign(self.w)\n",
+    "        grad_l1[0] = 0\n",
+    "        grad_l2 = self.l2_coef * 2 * self.w\n",
+    "        grad_l2[0] = 0\n",
+    "\n",
+    "\n",
+    "        assert grad_l1[0] == grad_l2[0] == 0, \"Bias в регуляризационные слагаемые не входит!\"\n",
+    "        assert grad_basic.shape == grad_l1.shape == grad_l2.shape == (X_batch.shape[1],) , \"Градиенты должны быть столбцом из k_features + 1 элементов\"\n",
+    "\n",
+    "        return grad_basic + grad_l1 + grad_l2"
+   ],
+   "id": "3888ea332c4b5850",
+   "outputs": [],
+   "execution_count": 9
+  },
+  {
+   "metadata": {
+    "ExecuteTime": {
+     "end_time": "2024-10-26T15:33:19.311092Z",
+     "start_time": "2024-10-26T15:33:19.304437Z"
+    }
+   },
+   "cell_type": "code",
+   "source": [
+    "from sklearn.datasets import make_classification\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "X, y = make_classification(n_samples=1000,  # Количество образцов\n",
+    "                           n_features=10,  # Количество признаков\n",
+    "                           n_classes=2,  # Два класса\n",
+    "                           n_informative=2,  # Количество информативных признаков\n",
+    "                           n_redundant=2,  # Количество избыточных признаков\n",
+    "                           random_state=42)  # Фиксируем random_state для воспроизводимости\n",
+    "X_train,X_val,y_train,y_val = train_test_split(X,y,test_size=0.2,random_state=42)"
+   ],
+   "id": "f1d51fd0ebb7fccc",
+   "outputs": [],
+   "execution_count": 21
+  },
+  {
+   "metadata": {
+    "ExecuteTime": {
+     "end_time": "2024-10-26T15:34:09.379120Z",
+     "start_time": "2024-10-26T15:34:09.366194Z"
+    }
+   },
+   "cell_type": "code",
+   "source": [
+    "model = ElasticLogisticRegression(0.4,0.9)\n",
+    "model.fit(X_train,y_train)"
+   ],
+   "id": "1c3145df65df75e8",
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[112.56279476513735,\n",
+       " 48.77745588521163,\n",
+       " 33.50830962875891,\n",
+       " 40.972057863700314,\n",
+       " 42.44641589050629,\n",
+       " 31.07288143749335,\n",
+       " 48.97715583220817,\n",
+       " 46.30098399469689,\n",
+       " 57.32805691321634,\n",
+       " 27.183834112387906,\n",
+       " 31.803530132328792,\n",
+       " 37.13979174581408,\n",
+       " 37.41962181235834,\n",
+       " 33.97007186671705,\n",
+       " 52.15509288446483,\n",
+       " 44.62949201466263,\n",
+       " 53.53189839984743,\n",
+       " 27.04994284166758,\n",
+       " 31.497533270527914,\n",
+       " 37.649566038768725,\n",
+       " 37.583768699464734,\n",
+       " 34.74173783717075,\n",
+       " 53.758890799828755,\n",
+       " 44.179869198878066,\n",
+       " 53.113376233027196,\n",
+       " 27.152799488786705,\n",
+       " 31.56360376225961,\n",
+       " 37.723001841789795,\n",
+       " 37.6225191181458,\n",
+       " 34.838016207557104,\n",
+       " 53.924819031798116,\n",
+       " 44.13093462699303,\n",
+       " 53.016501437625635,\n",
+       " 27.15540886829349,\n",
+       " 31.57076359359811,\n",
+       " 37.73292292070593,\n",
+       " 37.6276377823409,\n",
+       " 34.85034753380265,\n",
+       " 53.94633487838449,\n",
+       " 44.125043450589715,\n",
+       " 53.004692043045466,\n",
+       " 27.15574492050345,\n",
+       " 31.57164202955121,\n",
+       " 37.73414990292824,\n",
+       " 37.62828125547543,\n",
+       " 34.851854690920675,\n",
+       " 53.94896579409231,\n",
+       " 44.12432515074225,\n",
+       " 53.003250753012786,\n",
+       " 27.155786054358366,\n",
+       " 31.571749258397816,\n",
+       " 37.73429972668107,\n",
+       " 37.628359911889056,\n",
+       " 34.85203851570286,\n",
+       " 53.94928668445161,\n",
+       " 44.12423756603056,\n",
+       " 53.003074987348775,\n",
+       " 27.15579107141992,\n",
+       " 31.571762334596208,\n",
+       " 37.73431799815231,\n",
+       " 37.6283695053743,\n",
+       " 34.852060930551716,\n",
+       " 53.949325812650386,\n",
+       " 44.124226886746726,\n",
+       " 53.00305355570988,\n",
+       " 27.15579168318222,\n",
+       " 31.571763929013912,\n",
+       " 37.73432022605946,\n",
+       " 37.62837067516088,\n",
+       " 34.85206366362824,\n",
+       " 53.94933058361301,\n",
+       " 44.12422558461178,\n",
+       " 53.00305094252495,\n",
+       " 27.15579175777537,\n",
+       " 31.571764123423108,\n",
+       " 37.73432049771097,\n",
+       " 37.628370817794675,\n",
+       " 34.852063996874975,\n",
+       " 53.949331165341206,\n",
+       " 44.12422542584129]"
+      ]
+     },
+     "execution_count": 30,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "execution_count": 30
+  },
+  {
+   "metadata": {
+    "ExecuteTime": {
+     "end_time": "2024-10-26T15:34:09.931161Z",
+     "start_time": "2024-10-26T15:34:09.924582Z"
+    }
+   },
+   "cell_type": "code",
+   "source": [
+    "from sklearn.metrics import accuracy_score\n",
+    "accuracy_score(y_val,model.predict(X_val))"
+   ],
+   "id": "b001dcd29e101c45",
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.805"
+      ]
+     },
+     "execution_count": 31,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "execution_count": 31
+  },
+  {
+   "metadata": {},
+   "cell_type": "code",
+   "outputs": [],
+   "execution_count": null,
+   "source": "",
+   "id": "6d7c0d82e13c0889"
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 2
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython2",
+   "version": "2.7.6"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
